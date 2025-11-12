@@ -1,151 +1,152 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState } from "react";
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const SHEETS_URL = import.meta.env.VITE_SHEETS_URL || "";
 
 export default function App() {
-  const [form, setForm] = useState({ nama:'', nim:'', prodi:'', dosen:'', judul:'', tanggal:'' });
-  const [file, setFile] = useState(null);
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
-  const [adminToken, setAdminToken] = useState(localStorage.getItem('adminToken')||'');
-  const [participants, setParticipants] = useState([]);
-  const [query, setQuery] = useState('');
-  const fileRef = useRef();
-
-  useEffect(()=> {
-    if (adminToken) fetchParticipants();
-  }, [adminToken]);
-
-  function handleChange(e){ setForm({...form, [e.target.name]: e.target.value}); }
-  function handleFile(e){ setFile(e.target.files[0]); }
-
-  async function submit(e){
-    e.preventDefault();
-    if(!form.nama || !form.nim || !form.judul){ setMsg({type:'error', text:'Isi nama, NIM, judul'}); return; }
-    if(!/^\d{8,12}$/.test(form.nim)){ setMsg({type:'error', text:'Format NIM 8-12 digit.'}); return; }
-    const fd = new FormData();
-    Object.keys(form).forEach(k=> fd.append(k, form[k]));
-    if(file) fd.append('berkas', file);
-    try {
-      const res = await fetch(API + '/api/register', { method:'POST', body: fd });
-      const j = await res.json();
-      if(!res.ok){ setMsg({type:'error', text: j.error || 'Gagal daftar'}); return; }
-      setMsg({type:'success', text:'Pendaftaran berhasil!'});
-      setForm({ nama:'', nim:'', prodi:'', dosen:'', judul:'', tanggal:'' });
-      setFile(null); if(fileRef.current) fileRef.current.value='';
-    } catch(err){ setMsg({type:'error', text:'Network error'}); }
-  }
-
-  async function adminLogin(e){
-    e.preventDefault();
-    const password = e.target.password.value;
-    try{
-      const res = await fetch(API + '/api/admin/login', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ password })
-      });
-      const j = await res.json();
-      if(!res.ok){ setMsg({type:'error', text: j.error || 'Login failed'}); return; }
-      localStorage.setItem('adminToken', j.token);
-      setAdminToken(j.token);
-      setMsg({type:'success', text:'Admin login berhasil'});
-      e.target.reset();
-    } catch(e){ setMsg({type:'error', text:'Network error'}); }
-  }
-
-  async function fetchParticipants(){
-    try{
-      const res = await fetch(API + '/api/participants', { headers:{ Authorization: 'Bearer ' + adminToken }});
-      if(!res.ok){ setMsg({type:'error', text:'Tidak bisa mengambil peserta'}); return; }
-      const j = await res.json();
-      setParticipants(j);
-    }catch(e){ setMsg({type:'error', text:'Network error'}); }
-  }
-
-  async function handleDelete(id){
-    if(!confirm('Hapus peserta ini?')) return;
-    try{
-      const res = await fetch(API + '/api/participants/' + id, { method:'DELETE', headers:{ Authorization: 'Bearer ' + adminToken }});
-      if(!res.ok){ setMsg({type:'error', text:'Gagal hapus'}); return; }
-      setParticipants(prev => prev.filter(p=>p.id!==id));
-      setMsg({type:'success', text:'Terhapus'});
-    }catch(e){ setMsg({type:'error', text:'Network error'}); }
-  }
-
-  function exportCSV(){
-    if(participants.length === 0) { setMsg({type:'info', text:'Belum ada peserta'}); return; }
-    const headers = ['id','nama','nim','prodi','dosen','judul','tanggal','berkas','waktuDaftar'];
-    const rows = participants.map(p => headers.map(h => JSON.stringify(p[h]||'')).join(','));
-    const csv = [headers.join(','), ...rows].join('\\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'peserta.csv'; a.click(); URL.revokeObjectURL(url);
-  }
-
-  const filtered = participants.filter(p => {
-    const q = query.toLowerCase();
-    return p.nama.toLowerCase().includes(q) || p.nim.includes(q) || (p.prodi||'').toLowerCase().includes(q);
+  const [form, setForm] = useState({
+    nama: "",
+    nim: "",
+    prodi: "",
+    dosen: "",
+    judul: "",
+    tanggal: "",
+    berkasName: "",
+    email: ""
   });
 
-  return (
-    <div style={{padding:24}}>
-      <h1 style={{fontSize:22, marginBottom:12}}>Pendaftaran Seminar Skripsi</h1>
-      {msg && <div style={{marginBottom:12, padding:8, background: msg.type==='error' ? '#fee2e2' : '#bbf7d0'}}>{msg.text}</div>}
-      <div style={{display:'flex', gap:20}}>
-        <form onSubmit={submit} style={{flex:1, background:'#fff', padding:16, borderRadius:8}}>
-          <h2>Form Pendaftaran</h2>
-          <input name="nama" placeholder="Nama lengkap" value={form.nama} onChange={handleChange} style={{width:'100%',padding:8,marginTop:8}} />
-          <input name="nim" placeholder="NIM" value={form.nim} onChange={handleChange} style={{width:'100%',padding:8,marginTop:8}} />
-          <input name="prodi" placeholder="Program Studi" value={form.prodi} onChange={handleChange} style={{width:'100%',padding:8,marginTop:8}} />
-          <input name="dosen" placeholder="Dosen Pembimbing" value={form.dosen} onChange={handleChange} style={{width:'100%',padding:8,marginTop:8}} />
-          <textarea name="judul" placeholder="Judul Skripsi" value={form.judul} onChange={handleChange} style={{width:'100%',padding:8,marginTop:8}} rows={3} />
-          <input name="tanggal" type="date" value={form.tanggal} onChange={handleChange} style={{width:'100%',padding:8,marginTop:8}} />
-          <input ref={fileRef} type="file" accept="application/pdf" onChange={handleFile} style={{marginTop:8}} />
-          <div style={{marginTop:12, display:'flex', gap:8}}>
-            <button type="submit" style={{padding:'8px 12px', background:'#2563eb', color:'#fff', border:'none', borderRadius:4}}>Daftar</button>
-            <button type="button" onClick={()=>{ setForm({ nama:'', nim:'', prodi:'', dosen:'', judul:'', tanggal:'' }); setFile(null); if(fileRef.current) fileRef.current.value=''; }} style={{padding:'8px 12px'}}>Reset</button>
-          </div>
-        </form>
+  function update(k, v) {
+    setForm(prev => ({ ...prev, [k]: v }));
+  }
 
-        <div style={{width:420, background:'#fff', padding:16, borderRadius:8}}>
-          <h2>Admin</h2>
-          {!adminToken ? (
-            <form onSubmit={adminLogin}>
-              <input name="password" placeholder="Password admin" style={{width:'100%',padding:8,marginTop:8}} />
-              <div style={{marginTop:8}}>
-                <button style={{padding:'8px 12px', background:'#111827', color:'#fff', border:'none', borderRadius:4}}>Masuk</button>
-              </div>
-            </form>
-          ) : (
-            <>
-              <div style={{display:'flex', gap:8, marginBottom:8}}>
-                <input placeholder="Cari nama / NIM / prodi" value={query} onChange={e=>setQuery(e.target.value)} style={{flex:1,padding:8}} />
-                <button onClick={exportCSV} style={{padding:'6px 8px'}}>Ekspor CSV</button>
-                <button onClick={()=>{ localStorage.removeItem('adminToken'); setAdminToken(''); setParticipants([]); }} style={{padding:'6px 8px'}}>Keluar</button>
-              </div>
-              <div style={{maxHeight:300, overflow:'auto'}}>
-                <table style={{width:'100%', fontSize:12}}>
-                  <thead><tr style={{borderBottom:'1px solid #e5e7eb'}}><th>Nama</th><th>NIM</th><th>Prodi</th><th>Judul</th><th>Aksi</th></tr></thead>
-                  <tbody>
-                    {filtered.map(p => (
-                      <tr key={p.id} style={{borderBottom:'1px solid #efefef'}}>
-                        <td style={{padding:8}}>{p.nama}<div style={{fontSize:11,color:'#6b7280'}}>{new Date(p.waktuDaftar).toLocaleString()}</div></td>
-                        <td style={{padding:8}}>{p.nim}</td>
-                        <td style={{padding:8}}>{p.prodi}</td>
-                        <td style={{padding:8}}>{p.judul}</td>
-                        <td style={{padding:8}}><button onClick={()=>handleDelete(p.id)} style={{padding:'4px 6px'}}>Hapus</button></td>
-                      </tr>
-                    ))}
-                    {filtered.length===0 && <tr><td colSpan={5} style={{padding:12,color:'#6b7280'}}>Belum ada peserta</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+  function next() {
+    if (step === 1) {
+      if (!form.nama || !/^\d{8,12}$/.test(form.nim) || !form.prodi) {
+        setMsg({ type: "error", text: "Isi Nama, NIM (8-12 digit), Program Studi" });
+        return;
+      }
+    }
+    setMsg(null);
+    setStep(s => Math.min(4, s + 1));
+  }
+
+  function back() {
+    setMsg(null);
+    setStep(s => Math.max(1, s - 1));
+  }
+
+  async function submit() {
+    if (!SHEETS_URL) {
+      setMsg({ type: "error", text: "Belum ada endpoint Google Sheets (VITE_SHEETS_URL belum diset)." });
+      return;
+    }
+    setLoading(true);
+    setMsg(null);
+    try {
+      // build payload
+      const payload = { ...form };
+
+      const res = await fetch(SHEETS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const j = await res.json();
+      if (j && j.ok) {
+        setMsg({ type: "success", text: "Pendaftaran berhasil! Terima kasih." });
+        setStep(4);
+      } else {
+        setMsg({ type: "error", text: "Gagal mengirim. Coba lagi." });
+      }
+    } catch (err) {
+      setMsg({ type: "error", text: "Network error: " + err.message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: 20, fontFamily: "system-ui,Segoe UI,Roboto" }}>
+      <div style={{ maxWidth: 800, margin: "0 auto", background: "#fff", padding: 20, borderRadius: 8 }}>
+        <h1 style={{ marginBottom: 8 }}>Pendaftaran Seminar Skripsi</h1>
+        <p style={{ marginTop: 0, color: "#666" }}>Form multi-step — isi langkah per langkah</p>
+
+        {msg && (
+          <div style={{ marginBottom: 12, padding: 10, background: msg.type === "error" ? "#fee2e2" : "#ecfdf5", color: msg.type === "error" ? "#9b1c1c" : "#065f46" }}>
+            {msg.text}
+          </div>
+        )}
+
+        {step === 1 && (
+          <div>
+            <h3>Langkah 1 — Data Pribadi</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              <input placeholder="Nama lengkap" value={form.nama} onChange={e => update("nama", e.target.value)} />
+              <input placeholder="NIM (8-12 digit)" value={form.nim} onChange={e => update("nim", e.target.value)} />
+              <input placeholder="Program Studi" value={form.prodi} onChange={e => update("prodi", e.target.value)} />
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <button onClick={next}>Lanjut</button>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div>
+            <h3>Langkah 2 — Info Akademik</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              <input placeholder="Dosen Pembimbing" value={form.dosen} onChange={e => update("dosen", e.target.value)} />
+              <textarea placeholder="Judul Skripsi" value={form.judul} onChange={e => update("judul", e.target.value)} rows={4} />
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <button onClick={back} style={{ marginRight: 8 }}>Kembali</button>
+              <button onClick={next}>Lanjut</button>
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div>
+            <h3>Langkah 3 — Jadwal & Berkas</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              <input type="date" value={form.tanggal} onChange={e => update("tanggal", e.target.value)} />
+              <input placeholder="Nama file PDF (opsional)" value={form.berkasName} onChange={e => update("berkasName", e.target.value)} />
+              <input placeholder="Email (opsional, untuk konfirmasi)" value={form.email} onChange={e => update("email", e.target.value)} />
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <button onClick={back} style={{ marginRight: 8 }}>Kembali</button>
+              <button onClick={next}>Lanjut ke Kirim</button>
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div>
+            <h3>Konfirmasi & Kirim</h3>
+            <div style={{ background: "#fafafa", padding: 12, borderRadius: 6 }}>
+              <div><strong>Nama:</strong> {form.nama}</div>
+              <div><strong>NIM:</strong> {form.nim}</div>
+              <div><strong>Prodi:</strong> {form.prodi}</div>
+              <div><strong>Dosen:</strong> {form.dosen}</div>
+              <div><strong>Judul:</strong> {form.judul}</div>
+              <div><strong>Tanggal:</strong> {form.tanggal}</div>
+              <div><strong>Berkas (nama):</strong> {form.berkasName}</div>
+              <div><strong>Email:</strong> {form.email}</div>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <button onClick={back} style={{ marginRight: 8 }}>Kembali</button>
+              <button onClick={submit} disabled={loading}>{loading ? "Mengirim..." : "Kirim Pendaftaran"}</button>
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginTop: 18, fontSize: 13, color: "#666" }}>
+          <small>Catatan: Saat ini berkas tidak diupload — hanya nama file yang dicatat. Untuk menyimpan file (PDF) ke Drive, saya bisa tambahkan integrasi Drive bila mau.</small>
         </div>
       </div>
     </div>
   );
 }
-
-// helper to keep handleChange reference
-function handleChange(e){ /* placeholder to avoid lint error when copy-paste; real handler is inside component */ }
